@@ -841,13 +841,13 @@ return{get,ctx,note}})();
 
 /* ---------- iei: respostas aprovadas guardadas no Firebase Realtime Database (REST, sem SDK) ---------- */
 const QA=(()=>{
-const FB={db:"https://iei-preperguntas-default-rtdb.europe-west1.firebasedatabase.app",key:"AIzaSyBYEmagRVbdqLvnM_CwKlQRfXMpjsgDoSA",admin:"IEI-2768-YB25"};
+const FB={db:"https://iei-preperguntas-default-rtdb.europe-west1.firebasedatabase.app",key:"AIzaSyBYEmagRVbdqLvnM_CwKlQRfXMpjsgDoSA",admins:["IEI-2768-YB25","IEI-GL75-GL75"]};
 const nz=PRED.nz,lev=PRED.lev,LS="iei-qa-v1",AU="iei-fb-auth";
 let idx={},ents={},last=0,tok=null,exp=0,uid=null;
 try{const c=JSON.parse(localStorage.getItem(LS)||"{}");idx=c.idx||{};ents=c.ents||{}}catch(e){}
 const persist=()=>{try{const e2={};Object.keys(ents).slice(-300).forEach(k=>e2[k]=ents[k]);ents=e2;localStorage.setItem(LS,JSON.stringify({idx,ents}))}catch(e){}};
 const key=q=>nz(q).replace(/ /g,"_").slice(0,150);
-const isAdmin=()=>{const u=me();return!!u&&u.ieiId===FB.admin};
+const isAdmin=()=>{const u=me();return!!u&&FB.admins.includes(u.ieiId)};
 const J=async(path,opt,ms)=>{const c=new AbortController(),t=setTimeout(()=>c.abort(),ms||6000);
  try{const r=await fetch(FB.db+path,{...(opt||{}),signal:c.signal});if(!r.ok){const e=new Error("http "+r.status);e.status=r.status;throw e}return await r.json()}finally{clearTimeout(t)}};
 async function load(k){const e=await J("/qa/"+k+".json");if(e&&e.a)ents[k]=e;return ents[k]||null}
