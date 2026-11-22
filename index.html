@@ -257,7 +257,7 @@ document.addEventListener("keydown",e=>{if(e.key==="Enter"&&e.target.matches(".a
 /* ===== iei: créditos, jogo, planos, controlo parental =====
    Toda a lógica está em API/commit(): é o único sítio a trocar por chamadas ao backend na nuvem. */
 DB.sys=DB.sys||{seen:0};
-const FIXED_TIERS=[[200,2],[500,8],[1000,99],[2000,290],[5000,990],[null,3900]];
+const FIXED_TIERS=[[200,6],[500,24],[1000,299],[2000,290],[5000,990],[null,3900]];
 DB.cfg=Object.assign({free:10000,pro:30000,proOn:true,reward:3000,defMin:120,defFrom:"07:00",defTo:"21:00",benefits:"Mais créditos diários, histórico alargado e funcionalidades avançadas da iei AI."},DB.cfg||{});
 DB.cfg.tiers=FIXED_TIERS.map(t=>t.slice());DB.cfg.count="response";DB.cfg.pricingVersion=6;
 delete DB.cfg.half;delete DB.cfg.resW;
@@ -303,7 +303,7 @@ function settle(u,wi,wo,reserve,id){return commit(()=>{
  if(!c)return{qty:0};return post(u,"Consumo de IA",-c,"iei AI · "+tag(),undefined,wo)
 })}
 /* escalões progressivos do modo programação (milésimas de crédito por palavra) */
-const PT=[[200,2],[500,8],[1000,99],[2000,290],[5000,990],[Infinity,3900]];
+const PT=[[200,6],[500,24],[1000,299],[2000,290],[5000,990],[Infinity,3900]];
 const pref=u=>({code:!!(u&&u.aiCode),model:u&&u.aiModel==="i5"?"i5":"tech1"});
 const tag=()=>{const p=pref(me());return p.model+(p.code?" · programação":"")};
 function pr(w){const p=pref(me());if(!Number.isFinite(w)||w<=0)return 0;let t;
@@ -434,10 +434,10 @@ function MD(src){const L=E(src).replace(/\r/g,"").split("\n");let h="",list=null
 function outPopup(){const u=me();modal(`<h3>🍀 Os teus iei Credits terminaram</h3><p>Não tens créditos disponíveis suficientes para continuar agora. A conversa fica guardada aqui e podes continuar depois.</p><p class="mut">Saldo atual: ${fmt(bal(u))}<br>Próxima renovação: ${nextRenew()}</p><div class="row"><button class="btn soft" data-act="proInfo">Consultar o iei Pro</button>${u.w.game!==dayK(now())?`<button class="btn soft" data-act="game">Jogar o iei Game</button>`:""}<button class="btn" data-act="cm">Fechar</button></div>`)}
 /* ---- iei AI ---- */
 /* ---- motor de IA dentro da app (WebLLM): sem chaves, sem servidor. Descarrega o modelo uma vez e depois funciona offline ---- */
-const LOCAL={eng:null,cur:null,loading:null,models:{fast:"Qwen2.5-1.5B-Instruct-q4f16_1-MLC",best:"Qwen2.5-3B-Instruct-q4f16_1-MLC"}};
+const LOCAL={eng:null,cur:null,loading:null,models:{fast:(/Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent)||(navigator.deviceMemory||8)<=4)?"Qwen2.5-0.5B-Instruct-q4f16_1-MLC":"Qwen2.5-1.5B-Instruct-q4f16_1-MLC",best:"Qwen2.5-3B-Instruct-q4f16_1-MLC"}};
 LOCAL.mobile=/Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent)||(navigator.deviceMemory||8)<=4;
 LOCAL.cfg=w=>({...w.prebuiltAppConfig,useIndexedDBCache:true});
-LOCAL.level=()=>{const v=localStorage.getItem("iei-level");return v==="fast"||v==="best"?v:(LOCAL.mobile?"fast":"best")};
+LOCAL.level=()=>{const v=localStorage.getItem("iei-level");if(LOCAL.mobile)return "fast";return v==="fast"||v==="best"?v:"best"};
 LOCAL.fast=()=>LOCAL.level()==="fast";
 function showLoad(t,pct){let d=document.getElementById("ieiLoad");if(t==null){if(d)d.remove();return}
  if(!d){d=document.createElement("div");d.id="ieiLoad";d.style.cssText="position:fixed;left:12px;right:12px;bottom:12px;z-index:99999;background:#e8f5e9;color:#2e5a3a;border:1px solid #b7dcc0;border-radius:14px;padding:10px 14px;font:14px system-ui,sans-serif;box-shadow:0 4px 18px rgba(0,0,0,.15)";document.body.appendChild(d)}
@@ -522,6 +522,7 @@ LOCAL.chat=async(msgs,p)=>{p=p||{};
  let mt=p.code?(p.model==="i5"?1800:3000):(p.model==="i5"?450:800);
  mt=Math.max(256,Math.min(mt,4096-Math.ceil(JSON.stringify(msgs).length/2.2)-64));
  if(!p.code&&words(msgs[msgs.length-1].content)<=6)mt=160;
+ if(LOCAL.mobile){mt=Math.min(mt,p.code?700:300);if(msgs.length>7)msgs=[msgs[0],...msgs.slice(-6)]}
  const o={messages:msgs,max_tokens:mt,temperature:p.code?.25:.5,top_p:.9};
  if(!p.onToken){const r=await e.chat.completions.create({...o,stream:false});return r.choices[0].message.content}
  let full="";const it=await e.chat.completions.create({...o,stream:true});
@@ -888,9 +889,40 @@ async function vote(q,a,up){const t=await auth(),k=key(q),n=Date.now();
  const c1=await J("/qa/"+k+".json",{cache:"no-store"}),c2=await J("/idx/"+k+".json",{cache:"no-store"});
  if(up?(!c1||c1.a!==a||!c2):(c1||c2))throw new Error("o Firebase não confirmou a gravação (vê as regras e o separador Dados)");
  if(up){ents[k]={q,a,t:n,ok:true};idx[k]={q,t:n}}else{delete ents[k];delete idx[k]}persist()}
+/* importar perguntas/respostas de um ficheiro (.txt "Pergunta:/Resposta:" ou .json) para o Firebase */
+function parseQA(txt){txt=String(txt||"").replace(/^\uFEFF/,"").trim();const out=[];
+ try{const j=JSON.parse(txt),arr=Array.isArray(j)?j:(j&&j.perguntas)||[];
+  for(const x of arr){const q=String(x.q||x.pergunta||"").trim(),a=String(x.a||x.resposta||"").trim();if(q&&a)out.push({q,a})}return out}catch(e){}
+ let cur=null,mode="";const flush=()=>{if(cur&&cur.q.trim()&&cur.a.trim())out.push({q:cur.q.trim(),a:cur.a.trim()});cur=null;mode=""};
+ for(const line of txt.split(/\r?\n/)){let m;
+  if(m=line.match(/^\s*(?:p|pergunta)\s*:\s*(.*)$/i)){flush();cur={q:m[1],a:""};mode="q"}
+  else if(cur&&(m=line.match(/^\s*(?:r|resposta)\s*:\s*(.*)$/i))){cur.a=m[1];mode="a"}
+  else if(cur&&line.trim()){if(mode==="a")cur.a+="\n"+line;else cur.q+=" "+line.trim()}
+  else if(cur&&mode==="a"&&!line.trim()){cur.a+="\n"}}
+ flush();return out}
+async function importMany(items){const t=await auth(),n=Date.now(),H={"Content-Type":"application/json"};let done=0;
+ const seen=new Set(),list=items.filter(x=>{const k=key(x.q);if(k.length<8||seen.has(k))return false;seen.add(k);return true});
+ for(let i=0;i<list.length;i+=80){const part=list.slice(i,i+80),body={};
+  for(const x of part){const k=key(x.q);body["qa/"+k]={q:x.q,a:x.a,t:n,ok:true};body["idx/"+k]={q:x.q,t:n};body["bad/"+k]=null}
+  try{await J("/.json?auth="+t,{method:"PATCH",headers:H,body:JSON.stringify(body)},20000)}
+  catch(e){if(e.status!==401&&e.status!==403)throw e;
+   for(const [p,v] of Object.entries(body))await J("/"+p+".json?auth="+t,v==null?{method:"DELETE"}:{method:"PUT",headers:H,body:JSON.stringify(v)},20000)}
+  done+=part.length}
+ if(done){const k=key(list[list.length-1].q),c=await J("/qa/"+k+".json",{cache:"no-store"});
+  if(!c||!c.a)throw new Error("o Firebase não confirmou a gravação (vê as regras e o separador Dados)")}
+ await warm(true);return{total:items.length,saved:done,skipped:items.length-done}}
+function pickImport(box){const inp=document.createElement("input");inp.type="file";inp.accept=".txt,.json,text/plain,application/json";
+ inp.onchange=async()=>{const f=inp.files&&inp.files[0];if(!f)return;const out=box.querySelector("#qimr");
+  const say=(h,err)=>{if(out){out.style.color=err?"#b3261e":"";out.innerHTML=h}};
+  try{say("A ler o ficheiro…");const items=parseQA(await f.text());
+   if(!items.length)return say("Não encontrei perguntas. Usa blocos <code>Pergunta:</code> / <code>Resposta:</code> ou um JSON.",true);
+   say("A enviar "+items.length+" perguntas para o Firebase…");const r=await importMany(items);
+   say("✅ "+r.saved+" perguntas guardadas"+(r.skipped?" ("+r.skipped+" ignoradas: repetidas ou muito curtas)":"")+". Já aparecem no iei para toda a gente.")}
+  catch(e){say("Não foi possível importar: "+E(e.message||String(e)),true)}};
+ inp.click()}
 async function authModal(){const m=modal(`<h3>🛡️ Admin</h3><p class="mut">A verificar este dispositivo…</p><div class="row"><button class="btn soft" data-act="cm">Fechar</button></div>`);
  const s=await status(),box=m.querySelector(".modal");if(!box)return;
- if(s.ok){box.innerHTML=`<h3>🛡️ Admin ligado ✅</h3><p>Este dispositivo já pode dar 👍 nas respostas certas e 👎 nas erradas.</p><div class="row"><button class="btn" data-act="cm">Fechar</button></div>`;return}
+ if(s.ok){box.innerHTML=`<h3>🛡️ Admin ligado ✅</h3><p>Este dispositivo já pode dar 👍 nas respostas certas e 👎 nas erradas.</p><p class="mut" style="font-size:.85rem">Também podes importar um ficheiro de perguntas e respostas (formato <code>Pergunta:</code> / <code>Resposta:</code>) para treinar o iei de uma vez.</p><p class="mut" id="qimr" style="font-size:.85rem"></p><div class="row"><button class="btn soft" id="qim">📥 Importar perguntas</button><button class="btn" data-act="cm">Fechar</button></div>`;box.querySelector("#qim").onclick=()=>pickImport(box);return}
  if(!s.uid){box.innerHTML=`<h3>🛡️ Não foi possível ligar</h3><p>${E(s.err||"Sem ligação ao Firebase.")}</p><p class="mut" style="font-size:.85rem">Se disser OPERATION_NOT_ALLOWED: Firebase → Authentication → Sign-in method → ativa "Anónimo".</p><div class="row"><button class="btn" data-act="cm">Fechar</button></div>`;return}
  box.innerHTML=`<h3>🛡️ Falta autorizar este dispositivo</h3><p>No Firebase → Realtime Database → Dados, cria <b>admins</b> e, dentro, um filho com este nome e o valor <b>true</b>:</p><p><code style="word-break:break-all">${E(s.uid)}</code></p><p class="mut" style="font-size:.85rem">Cada dispositivo (ou depois de limpar os dados do navegador) tem um UID novo.</p><div class="row"><button class="btn soft" id="cpu">Copiar UID</button><button class="btn" id="rck">Já fiz</button></div>`;
  box.querySelector("#cpu").onclick=()=>{try{navigator.clipboard.writeText(s.uid).then(()=>toast("UID copiado."),()=>toast("Não foi possível copiar.","err"))}catch(e){toast("Não foi possível copiar.","err")}};
@@ -997,7 +1029,7 @@ dlAll(){LOCAL.fetchAll();LOCAL.paint()},
 aiLvl(el){if(S.busy)return;S.draft=($("#ait")||{}).value||"";localStorage.setItem("iei-level",el.dataset.v==="fast"?"fast":"best");render()},
 aiModel(el){if(S.busy)return;const u=me();S.draft=($("#ait")||{}).value||"";commit(()=>{u.aiModel=el.dataset.v==="i5"?"i5":"tech1";return true});render()},
 aiCode(){if(S.busy)return;const u=me();S.draft=($("#ait")||{}).value||"";commit(()=>{u.aiCode=!u.aiCode;return true});render()},
-aiPrices(){const r=[["1–200",2],["201–500",8],["501–1000",99],["1001–2000",290],["2001–5000",990],["acima de 5000",3900]];modal(`<h3>Preços do modo programação</h3><div class="scroll"><table class="tbl"><tr><th>Escalão</th><th>Palavras</th><th>Créditos por palavra</th></tr>${r.map((x,i)=>`<tr><td>${i+1}</td><td>${x[0]}</td><td>${fmt(x[1])}</td></tr>`).join("")}</table></div><p class="mut" style="font-size:.85rem">Cada palavra paga o preço do escalão em que cai. A versão i5 custa menos 30% (total arredondado às milésimas).</p><div class="row"><button class="btn" data-act="cm">Fechar</button></div>`)},
+aiPrices(){const r=[["1–200",6],["201–500",24],["501–1000",299],["1001–2000",290],["2001–5000",990],["acima de 5000",3900]];modal(`<h3>Preços do modo programação</h3><div class="scroll"><table class="tbl"><tr><th>Escalão</th><th>Palavras</th><th>Créditos por palavra</th></tr>${r.map((x,i)=>`<tr><td>${i+1}</td><td>${x[0]}</td><td>${fmt(x[1])}</td></tr>`).join("")}</table></div><p class="mut" style="font-size:.85rem">Cada palavra paga o preço do escalão em que cai. A versão i5 custa menos 30% (total arredondado às milésimas).</p><div class="row"><button class="btn" data-act="cm">Fechar</button></div>`)},
 async send(){const u=me(),t=($("#ait")||{}).value||"";if(!t.trim()||S.busy)return;if(!pref(u).code&&looksBuild(t)){S.pend=t;S.draft=t;return buildAsk()}return A.sendNow(t)},
 async sendNow(t){const u=me();if(!t||!t.trim()||S.busy)return;
  const r=begin(u,t);if(!r.ok){if(r.cost!=null){render();return outPopup()}toast(r.why,"err");return render()}
